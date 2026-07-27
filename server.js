@@ -16,56 +16,62 @@ app.get('/track', async (req, res) => {
 
     let browser;
     try {
-        // تشغيل متصفح بدون واجهة (Headless)
         browser = await puppeteer.launch({
             headless: 'new',
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--single-process'
+                '--disable-accelerated-2d-canvas',
+                '--disable-gpu',
+                '--window-size=1920,1080'
             ]
         });
 
         const page = await browser.newPage();
         
-        // التمويه كمتصفح حقيقي
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-
-        // فتح صفحة التتبع الخاصة بـ أرامكس
-        const targetUrl = `https://www.aramex.com/express-courier/track-shipments?shipmentNumber=${encodeURIComponent(trackingNum)}`;
-        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-
-        // استخراج البيانات المباشرة من عناصر الـ DOM في أرامكس
-        const trackingData = await page.evaluate(() => {
-            const rows = document.querySelectorAll('.tracking-results-table tbody tr, .tracking-events-list .event-item');
-            const events = [];
-
-            rows.forEach(row => {
-                const title = row.querySelector('.status, .event-title, td:nth-child(2)')?.innerText?.trim() || '';
-                const location = row.querySelector('.location, td:nth-child(3)')?.innerText?.trim() || '';
-                const date = row.querySelector('.date, td:nth-child(1)')?.innerText?.trim() || '';
-
-                if (title) {
-                    events.push({ title, location, date });
-                }
-            });
-
-            return events;
+        // ضبط هيدرز كمتصفح حقيقي بالكامل
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
+        await page.setExtraHTTPHeaders({
+            'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8'
         });
+
+        let apiData = null;
+
+        // التقاط الرد المباشر من API أرامكس الداخلي عند تحميل الصفحة
+        page.on('response', async (response) => {
+            const url = response.url();
+            if (url.includes('/api/shipment/track') || url.includes('/Shipment/Track')) {
+                try {
+                    apiData = await response.json();
+                } catch (e) {
+                    // في حال لم يكن الرد JSON
+                }
+            }
+        });
+
+        // الانتقال لصفحة التتبع العامة
+        const targetUrl = `https://www.aramex.com/express-courier/track-shipments?shipmentNumber=${encodeURIComponent(trackingNum)}`;
+        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 45000 });
 
         await browser.close();
 
-        return res.json({
-            success: true,
-            trackingNum,
-            events: trackingData
-        });
+        if (apiData) {
+            return res.json({
+                success: true,
+                trackingNum,
+                data: apiData
+            });
+        } else {
+            return res.status(404).json({
+                error: 'لم يتم العثور على بيانات للشحنة أو لم يستجب السيرفر الداخلي'
+            });
+        }
 
     } catch (error) {
         if (browser) await browser.close();
-        console.error('Scraping Error:', error);
-        return res.status(500).json({ error: 'تعذر جلب البيانات من أرامكس، تأكد من الرقم وحاول مجدداً.' });
+        console.error('Puppeteer Error:', error);
+        return res.status(500).json({ error: 'حدث خطأ أثناء الاتصال بأرامكس، حاول مرة أخرى.' });
     }
 });
 
