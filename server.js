@@ -30,7 +30,7 @@ app.get('/track', async (req, res) => {
 
         const page = await browser.newPage();
         
-        // ضبط هيدرز كمتصفح حقيقي بالكامل
+        // ضبط الهيدرز كمتصفح حقيقي
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
         await page.setExtraHTTPHeaders({
             'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8'
@@ -38,20 +38,24 @@ app.get('/track', async (req, res) => {
 
         let apiData = null;
 
-        // التقاط الرد المباشر من API أرامكس الداخلي عند تحميل الصفحة
+        // التقاط الاستجابة من API أرامكس عند التحميل
         page.on('response', async (response) => {
             const url = response.url();
-            if (url.includes('/api/shipment/track') || url.includes('/Shipment/Track')) {
+            if (url.includes('/api/shipment/track') || url.includes('/Shipment/Track') || url.includes('track/results')) {
                 try {
-                    apiData = await response.json();
+                    const contentType = response.headers()['content-type'];
+                    if (contentType && contentType.includes('application/json')) {
+                        apiData = await response.json();
+                    }
                 } catch (e) {
-                    // في حال لم يكن الرد JSON
+                    // تجاهل الأخطاء غير المتعلقة بالـ JSON
                 }
             }
         });
 
-        // الانتقال لصفحة التتبع العامة
-        const targetUrl = `https://www.aramex.com/express-courier/track-shipments?shipmentNumber=${encodeURIComponent(trackingNum)}`;
+        // 🎯 الرابط الصحيح والمحدث بناءً على الرابط الذي أرسلته
+        const targetUrl = `https://www.aramex.com/sa/en/track/results?source=aramex&ShipmentNumber=${encodeURIComponent(trackingNum)}`;
+        
         await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 45000 });
 
         await browser.close();
@@ -64,7 +68,7 @@ app.get('/track', async (req, res) => {
             });
         } else {
             return res.status(404).json({
-                error: 'لم يتم العثور على بيانات للشحنة أو لم يستجب السيرفر الداخلي'
+                error: 'لم يتم العثور على بيانات للشحنة، تأكد من صحة الرقم'
             });
         }
 
