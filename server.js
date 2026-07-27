@@ -90,7 +90,7 @@ app.get('/track', async (req, res) => {
     } catch (error) {
         if (browser) await browser.close();
         console.error('Puppeteer Error Details:', error.message);
-        return res.status(500).json({ error: 'حدث خطأ أثناء الاتصال بأرامكس، حاول مرة أخرى.' });
+        return res.status(500).json({ error: ' الان حدث خطأ أثناء الاتصال بأرامكس، حاول مرة أخرى.' });
     }
 });
 
