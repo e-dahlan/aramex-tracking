@@ -7,7 +7,6 @@ app.use(cors());
 
 const PORT = process.env.PORT || 3000;
 
-// دالة انتظار بديلة ومتوافقة مع الإصدارات الحديثة
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 app.get('/track', async (req, res) => {
@@ -35,7 +34,6 @@ app.get('/track', async (req, res) => {
 
         const page = await browser.newPage();
 
-        // حظر الصور والـ CSS لتوفير الذاكرة وسرعة التحميل
         await page.setRequestInterception(true);
         page.on('request', (req) => {
             const resourceType = req.resourceType();
@@ -50,7 +48,6 @@ app.get('/track', async (req, res) => {
 
         let apiData = null;
 
-        // التقاط الـ JSON القادم من سيرفر أرامكس الداخلي
         page.on('response', async (response) => {
             const url = response.url();
             if (url.includes('/api/') || url.includes('track') || url.includes('Shipment')) {
@@ -70,7 +67,6 @@ app.get('/track', async (req, res) => {
         
         await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-        // انتظار 3 ثوانٍ لاكتمال استجابة الـ API
         await delay(3000);
 
         await browser.close();
@@ -90,7 +86,7 @@ app.get('/track', async (req, res) => {
     } catch (error) {
         if (browser) await browser.close();
         console.error('Puppeteer Error Details:', error.message);
-        return res.status(500).json({ error: ' الان حدث خطأ أثناء الاتصال بأرامكس، حاول مرة أخرى.' });
+        return res.status(500).json({ error: `حدث خطأ: ${error.message}` });
     }
 });
 
