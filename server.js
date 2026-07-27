@@ -7,6 +7,9 @@ app.use(cors());
 
 const PORT = process.env.PORT || 3000;
 
+// دالة انتظار بديلة ومتوافقة مع الإصدارات الحديثة
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 app.get('/track', async (req, res) => {
     const trackingNum = req.query.num;
 
@@ -32,7 +35,7 @@ app.get('/track', async (req, res) => {
 
         const page = await browser.newPage();
 
-        // 🚀 تسريع التحميل وتقليل استهلاك الذاكرة بحظر الصور والملفات الثقيلة
+        // حظر الصور والـ CSS لتوفير الذاكرة وسرعة التحميل
         await page.setRequestInterception(true);
         page.on('request', (req) => {
             const resourceType = req.resourceType();
@@ -47,7 +50,7 @@ app.get('/track', async (req, res) => {
 
         let apiData = null;
 
-        // التقاط الـ API الداخلي
+        // التقاط الـ JSON القادم من سيرفر أرامكس الداخلي
         page.on('response', async (response) => {
             const url = response.url();
             if (url.includes('/api/') || url.includes('track') || url.includes('Shipment')) {
@@ -65,11 +68,10 @@ app.get('/track', async (req, res) => {
 
         const targetUrl = `https://www.aramex.com/sa/en/track/results?source=aramex&ShipmentNumber=${encodeURIComponent(trackingNum)}`;
         
-        // وقت انتظار أسرع بكثير بعد حظر الصور
-        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-        // الانتظار القصير للتأكد من وصول بيانات الـ API
-        await page.waitForTimeout(3000);
+        // انتظار 3 ثوانٍ لاكتمال استجابة الـ API
+        await delay(3000);
 
         await browser.close();
 
