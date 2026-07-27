@@ -23,40 +23,53 @@ app.get('/track', async (req, res) => {
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-accelerated-2d-canvas',
-                '--disable-gpu',
-                '--window-size=1920,1080'
+                '--no-first-run',
+                '--no-zygote',
+                '--single-process',
+                '--disable-gpu'
             ]
         });
 
         const page = await browser.newPage();
-        
-        // ضبط الهيدرز كمتصفح حقيقي
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
-        await page.setExtraHTTPHeaders({
-            'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8'
-        });
 
-        let apiData = null;
-
-        // التقاط الاستجابة من API أرامكس عند التحميل
-        page.on('response', async (response) => {
-            const url = response.url();
-            if (url.includes('/api/shipment/track') || url.includes('/Shipment/Track') || url.includes('track/results')) {
-                try {
-                    const contentType = response.headers()['content-type'];
-                    if (contentType && contentType.includes('application/json')) {
-                        apiData = await response.json();
-                    }
-                } catch (e) {
-                    // تجاهل الأخطاء غير المتعلقة بالـ JSON
-                }
+        // 🚀 تسريع التحميل وتقليل استهلاك الذاكرة بحظر الصور والملفات الثقيلة
+        await page.setRequestInterception(true);
+        page.on('request', (req) => {
+            const resourceType = req.resourceType();
+            if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
+                req.abort();
+            } else {
+                req.continue();
             }
         });
 
-        // 🎯 الرابط الصحيح والمحدث بناءً على الرابط الذي أرسلته
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
+
+        let apiData = null;
+
+        // التقاط الـ API الداخلي
+        page.on('response', async (response) => {
+            const url = response.url();
+            if (url.includes('/api/') || url.includes('track') || url.includes('Shipment')) {
+                try {
+                    const contentType = response.headers()['content-type'];
+                    if (contentType && contentType.includes('application/json')) {
+                        const json = await response.json();
+                        if (json && (json.TrackingResults || json.data || json.Value)) {
+                            apiData = json;
+                        }
+                    }
+                } catch (e) {}
+            }
+        });
+
         const targetUrl = `https://www.aramex.com/sa/en/track/results?source=aramex&ShipmentNumber=${encodeURIComponent(trackingNum)}`;
         
-        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 45000 });
+        // وقت انتظار أسرع بكثير بعد حظر الصور
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
+
+        // الانتظار القصير للتأكد من وصول بيانات الـ API
+        await page.waitForTimeout(3000);
 
         await browser.close();
 
@@ -68,13 +81,13 @@ app.get('/track', async (req, res) => {
             });
         } else {
             return res.status(404).json({
-                error: 'لم يتم العثور على بيانات للشحنة، تأكد من صحة الرقم'
+                error: 'لم يتم العثور على بيانات للشحنة، تأكد من صحة الرقم.'
             });
         }
 
     } catch (error) {
         if (browser) await browser.close();
-        console.error('Puppeteer Error:', error);
+        console.error('Puppeteer Error Details:', error.message);
         return res.status(500).json({ error: 'حدث خطأ أثناء الاتصال بأرامكس، حاول مرة أخرى.' });
     }
 });
