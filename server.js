@@ -34,28 +34,20 @@ app.get('/track', async (req, res) => {
 
         const page = await browser.newPage();
 
-        await page.setRequestInterception(true);
-        page.on('request', (req) => {
-            const resourceType = req.resourceType();
-            if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
-                req.abort();
-            } else {
-                req.continue();
-            }
-        });
-
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
         let apiData = null;
 
+        // التقاط الرد المباشر من API أرامكس (تغطية GET و POST)
         page.on('response', async (response) => {
-            const url = response.url();
-            if (url.includes('/api/') || url.includes('track') || url.includes('Shipment')) {
+            const url = response.url().toLowerCase();
+            if (url.includes('track') || url.includes('shipment')) {
                 try {
-                    const contentType = response.headers()['content-type'];
-                    if (contentType && contentType.includes('application/json')) {
+                    const contentType = response.headers()['content-type'] || '';
+                    if (contentType.includes('application/json')) {
                         const json = await response.json();
-                        if (json && (json.TrackingResults || json.data || json.Value)) {
+                        // التأكد من أن الكائن يحتوي على بيانات تتبع فعلية
+                        if (json && (json.TrackingResults || json.data || json.Value || json.HasErrors !== undefined)) {
                             apiData = json;
                         }
                     }
@@ -65,9 +57,23 @@ app.get('/track', async (req, res) => {
 
         const targetUrl = `https://www.aramex.com/sa/en/track/results?source=aramex&ShipmentNumber=${encodeURIComponent(trackingNum)}`;
         
-        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        // فتح الصفحة وانتظار هدوء الشبكة لضمان اكتمال طلبات الـ XHR/Fetch
+        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 35000 });
 
-        await delay(3000);
+        // انتظار إضافي بسيط لتنفيذ السكربتات
+        await delay(2000);
+
+        // إذا لم يلتقط الـ Response Listener البيانات، نحاول تنفيذ الطلب مباشرة داخل جلسة المتصفح الموثوقة
+        if (!apiData) {
+            apiData = await page.evaluate(async (num) => {
+                try {
+                    const res = await fetch(`https://www.aramex.com/api/shipment/track?trackingNumbers=${num}`);
+                    return await res.json();
+                } catch (err) {
+                    return null;
+                }
+            }, trackingNum);
+        }
 
         await browser.close();
 
