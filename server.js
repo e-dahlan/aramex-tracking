@@ -34,54 +34,48 @@ app.get('/track', async (req, res) => {
 
         const page = await browser.newPage();
 
+        // إعداد أبعاد المتصفح والهيدرز كمتصفح حقيقي
+        await page.setViewport({ width: 1280, height: 800 });
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
-
-        let apiData = null;
-
-        // التقاط الرد المباشر من API أرامكس (تغطية GET و POST)
-        page.on('response', async (response) => {
-            const url = response.url().toLowerCase();
-            if (url.includes('track') || url.includes('shipment')) {
-                try {
-                    const contentType = response.headers()['content-type'] || '';
-                    if (contentType.includes('application/json')) {
-                        const json = await response.json();
-                        // التأكد من أن الكائن يحتوي على بيانات تتبع فعلية
-                        if (json && (json.TrackingResults || json.data || json.Value || json.HasErrors !== undefined)) {
-                            apiData = json;
-                        }
-                    }
-                } catch (e) {}
-            }
-        });
 
         const targetUrl = `https://www.aramex.com/sa/en/track/results?source=aramex&ShipmentNumber=${encodeURIComponent(trackingNum)}`;
         
-        // فتح الصفحة وانتظار هدوء الشبكة لضمان اكتمال طلبات الـ XHR/Fetch
-        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 35000 });
+        // الانتقال لصفحة التتبع مع الانتظار لاكتمال تحميل الـ DOM
+        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 40000 });
 
-        // انتظار إضافي بسيط لتنفيذ السكربتات
-        await delay(2000);
+        // انتظار إضافي لاكتمال رندر عناصر الصفحة
+        await delay(3000);
 
-        // إذا لم يلتقط الـ Response Listener البيانات، نحاول تنفيذ الطلب مباشرة داخل جلسة المتصفح الموثوقة
-        if (!apiData) {
-            apiData = await page.evaluate(async (num) => {
-                try {
-                    const res = await fetch(`https://www.aramex.com/api/shipment/track?trackingNumbers=${num}`);
-                    return await res.json();
-                } catch (err) {
-                    return null;
+        // استخراج البيانات المباشرة من عناصر DOM في صفحة أرامكس
+        const trackingDetails = await page.evaluate(() => {
+            const events = [];
+            
+            // قراءة جميع الصفوف أو أجزاء التتبع المتاحة في الصفحة
+            const elements = document.querySelectorAll('.tracking-results-table tbody tr, .tracking-update, .shipment-history-item, tr');
+            
+            elements.forEach(el => {
+                const text = el.innerText ? el.innerText.trim() : '';
+                if (text && text.length > 5) {
+                    events.push(text.split('\n').map(item => item.trim()).filter(Boolean));
                 }
-            }, trackingNum);
-        }
+            });
+
+            // قراءة الحالة العامة أو العنوان الرئيسي للشحنة إن وجد
+            const statusSummary = document.querySelector('.shipment-status, .status-title, h3, h4')?.innerText?.trim() || '';
+
+            return {
+                statusSummary,
+                history: events
+            };
+        });
 
         await browser.close();
 
-        if (apiData) {
+        if (trackingDetails && (trackingDetails.history.length > 0 || trackingDetails.statusSummary)) {
             return res.json({
                 success: true,
                 trackingNum,
-                data: apiData
+                data: trackingDetails
             });
         } else {
             return res.status(404).json({
