@@ -34,11 +34,11 @@ jobs:
               tf.extractall(dest, filter='data')
           print('Source expanded',list(dest.iterdir()))
           PY
-      - name: Install Android SDK
+      - name: Verify preinstalled Android SDK
         run: |
-          echo "Android SDK: $ANDROID_HOME"
-          echo y | sdkmanager --licenses >/dev/null || true
-          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          echo "SDK root: $ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms/android-35/android.jar"
+          ls "$ANDROID_HOME/build-tools/35.0.0/aapt2"
       - name: Build APK
         working-directory: pixellink-src
         run: gradle --no-daemon :app:assembleDebug --stacktrace
