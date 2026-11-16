@@ -1,0 +1,47 @@
+name: PixelLink P4 Android APK
+on:
+  push:
+    branches:
+      - pixellink-p4-apk-build-20261117
+    paths:
+      - p4payload.b64
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Expand PixelLink P4 source
+        run: |
+          python3 -m pip install --quiet brotli
+          python3 - <<'PY'
+          import base64, pathlib, io, tarfile, brotli
+          b64=pathlib.Path('p4payload.b64').read_text().strip()
+          data=brotli.decompress(base64.b64decode(b64))
+          dest=pathlib.Path('pixellink-src')
+          dest.mkdir(exist_ok=True)
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:') as tf:
+              tf.extractall(dest, filter='data')
+          print('Source expanded',list(dest.iterdir()))
+          PY
+      - name: Install Android SDK
+        run: yes | sdkmanager 'platforms;android-35' 'build-tools;35.0.0' >/dev/null
+      - name: Build APK
+        working-directory: pixellink-src
+        run: gradle --no-daemon :app:assembleDebug --stacktrace
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PixelLinkP4-debug-APK
+          path: pixellink-src/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
