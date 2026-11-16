@@ -34,6 +34,8 @@ jobs:
               tf.extractall(dest, filter='data')
           print('Source expanded',list(dest.iterdir()))
           PY
+      - name: Fix native Android Button compilation
+        run: sed -i 's/b.setTextAllCaps(false);//g' pixellink-src/app/src/main/java/me/pixellink/p4/MainActivity.java
       - name: Verify preinstalled Android SDK
         run: |
           echo "SDK root: $ANDROID_HOME"
